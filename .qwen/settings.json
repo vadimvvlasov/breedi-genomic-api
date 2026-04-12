@@ -2,7 +2,9 @@
   "permissions": {
     "allow": [
       "Bash(uv *)",
-      "Bash(mkdir *)"
+      "Bash(mkdir *)",
+      "WebSearch",
+      "WebFetch(snapdeploy.dev)"
     ]
   },
   "$version": 3

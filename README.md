@@ -127,6 +127,59 @@ docker compose up --build
 uv run python scripts/generate_dummy_model.py
 ```
 
+## Примеры использования
+
+**Health check:**
+```bash
+curl http://localhost:8000/health
+```
+
+**Предсказание GEBV** (dummy-модель ожидает 10 000 SNP):
+```bash
+python3 -c "
+import json, urllib.request
+dosages = [i % 3 for i in range(10000)]
+data = json.dumps({'animal_id': 'cow_123', 'snp_dosages': dosages}).encode()
+req = urllib.request.Request('http://localhost:8000/predict-gev', data=data, headers={'Content-Type': 'application/json'})
+resp = urllib.request.urlopen(req)
+print(json.dumps(json.loads(resp.read()), indent=2))
+"
+```
+
+**Ошибка валидации** (дозировка 3 — недопустима):
+```bash
+curl -X POST http://localhost:8000/predict-gev \
+  -H "Content-Type: application/json" \
+  -d '{"animal_id":"cow_123","snp_dosages":[0,3,1]}'
+```
+
+> Полная интерактивная документация доступна по адресу `/docs` (Swagger UI).
+
+## Подключение реальной модели
+
+1. **Обучите RR-BLUP в Python** — получите вектор аддитивных SNP-эффектов
+   (например, через `rrBLUP`-алгоритм, Ridge Regression из `sklearn` или любую другую реализацию).
+
+2. **Сохраните модель в формате, ожидаемом сервисом:**
+   ```python
+   import joblib
+   import numpy as np
+
+   joblib.dump({
+       "snp_effects": snp_effects,       # np.ndarray, shape (n_snps,)
+       "accuracy": 0.75,                 # оценка точности на валидации
+       "ref_mean": 0.0,                  # среднее GEBV референсной популяции
+       "ref_std": 1.0,                   # стандартное отклонение GEBV
+       "version": "v1-real",             # произвольная строка
+   }, "model.joblib")
+   ```
+
+3. **Разверните модель:**
+   - **Пересборка** — положите файл в `app/assets/model.joblib` и запустите `docker compose up --build`
+   - **Без пересборки** — раскомментируйте `volumes` в `docker-compose.yml`, положите `model.joblib` в корень проекта и перезапустите контейнер
+
+> Длина `snp_dosages` в запросе должна совпадать с числом SNP в модели. Если панель маркеров отличается — сервис вернёт `400`.
+
 ## Тесты
 
 ```bash
