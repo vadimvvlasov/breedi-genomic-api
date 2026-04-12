@@ -1,0 +1,19 @@
+services:
+  genomic-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    # To mount a custom model file, uncomment the lines below:
+    # volumes:
+    #   - ./model.joblib:/app/app/assets/model.joblib:ro
+    environment:
+      - UVICORN_WORKERS=4
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
