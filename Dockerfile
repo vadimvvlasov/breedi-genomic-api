@@ -1,12 +1,15 @@
 # syntax=docker/dockerfile:1
 
 # ---- builder stage (install deps with uv) ----
-FROM ghcr.io/astral-sh/uv:python3.13-slim AS builder
+FROM python:3.13-slim AS builder
 
 WORKDIR /app
 
+# Install uv
+RUN pip install --no-cache-dir uv
+
 # Copy project metadata and install Python deps
-COPY pyproject.toml ./
+COPY pyproject.toml uv.lock ./
 RUN uv venv .venv && \
     UV_PROJECT_ENVIRONMENT=.venv uv sync --frozen --no-dev
 
