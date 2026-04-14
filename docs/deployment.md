@@ -1,27 +1,28 @@
 # Деплой Genomic Prediction API
 
-## Render
+## Koyeb
 
 | Параметр | Значение |
 |---|---|
 | RAM | 512 МБ |
-| vCPU | shared |
-| Бесплатные часы | 750/мес (обнуляются 1-го числа) |
-| До засыпания | 15 мин idle |
-| Просыпание | 30-50 сек |
-| Карта | Не требуется |
-| Custom Domain | Бесплатно с SSL |
+| vCPU | 0.1 |
+| SSD | 2 ГБ |
+| До засыпания | ❌ Не засыпает (scale-to-zero после 1ч) |
+| Просыпание | 1-5 сек |
+| Карта | ✅ Требуется для верификации |
+| Free DB | PostgreSQL (1 ГБ, 5 ч/мес compute) |
+| Custom Domain | Бесплатно |
 
-> Платформа не требует кредитную карту. Достаточно GitHub-аккаунта.
+> **Требуется кредитная карта** для верификации. Списание — $0. Бесплатно в пределах Free tier.
 
 ---
 
 ## Шаг 1: Регистрация
 
-1. Откройте [render.com](https://render.com)
+1. Откройте [koyeb.com](https://www.koyeb.com)
 2. Нажмите **Start Free** → **Continue with GitHub**
 3. Авторизуйтесь через GitHub
-4. Подтвердите email
+4. Привяжите карту (требуется, но списывается $0)
 
 ---
 
@@ -53,10 +54,10 @@ ls -la app/assets/
 
 ## Шаг 3: Деплой
 
-### Вариант A: Через web-интерфейс
+### Вариант A: Через web-интерфейс (рекомендуется)
 
-1. Войдите в [dashboard.render.com](https://dashboard.render.com)
-2. Нажмите **New** → **Web Service**
+1. Войдите в [dashboard.koyeb.com](https://dashboard.koyeb.com)
+2. Нажмите **Create Service**
 3. Подключите GitHub-репозиторий:
    - Выберите organization
    - Выберите репозиторий `breedi-genomic-api`
@@ -64,62 +65,33 @@ ls -la app/assets/
    | Поле | Значение |
    |---|---|
    | Name | `genomic-api` |
-   | Root Directory | (по умолчанию) |
-   | Build Command | (пусто — использует Dockerfile) |
-   | Start Command | (пусто — из Dockerfile) |
-5. Нажмите **Advanced**:
-   | Поле | Значение |
-   |---|---|
+   | Builder | Dockerfile |
+   | Branch | `main` |
    | Port | `8000` |
-   | Instance Type | **Free** |
-6. Нажмите **Deploy**
+   | Region | `Frankfurt` (ближе к РФ) |
+5. Нажмите **Deploy**
 
-Первичный билд занимает 2-5 минут. После — сервис доступен по URL: `https://genomic-api.onrender.com`
+Первичный билд занимает 3-5 минут. После — сервис доступен по URL: `https://genomic-api.koyeb.app`
 
-### Вариант B: Через CLI
+### Вариант B: Через Koyeb CLI
 
 ```bash
 # Установка CLI
-brew install render-cli/render/render
+brew install koyeb/cli/koyeb  # macOS
+# или
+curl -L https://install.koyeb.dev | sh  # Linux
 
 # Авторизация
-render auth login
+koyeb login
 
 # Деплой
-render web create \
+koyeb service create \
   --name genomic-api \
-  --sourcePath . \
-  --buildCommand "docker build -t genomic-api ." \
-  --startCommand "docker run -p 8000:8000 genomic-api"
+  --github-owner your-username \
+  --github-repo breedi-genomic-api \
+  --builder dockerfile \
+  --port 8000
 ```
-
----
-
-## Шаг 4: Избежание засыпания (опционально)
-
-На Free tier сервис засыпает после 15 мин бездействия. Чтобы не заснул — используйте UptimeRobot для пинга.
-
-### Регистрация
-
-1. Откройте [uptimerobot.com](https://uptimerobot.com)
-2. Нажмите **Sign Up Free** → войдите через Google
-3. Нажмите **Add New Monitor**
-
-### Настройка монитора
-
-| Поле | Значение |
-|---|---|
-| Monitor Type | HTTP(s) |
-| Friendly Name | `genomic-api health` |
-| URL (or IP) | `https://genomic-api.onrender.com/health` |
-| Monitoring Interval | 5 minutes |
-| Alert Contacts | (ваш email) |
-
-Нажмите **Create Monitor**.
-
-Теперь UptimeRobot пингует `/health` каждые 5 минут — сервис не засыпает.
-
-> Бесплатный план: до 50 мониторов. Достаточно для одного сервиса.
 
 ---
 
@@ -127,14 +99,14 @@ render web create \
 
 | Endpoint | URL |
 |---|---|
-| Health | `https://genomic-api.onrender.com/health` |
-| Swagger UI | `https://genomic-api.onrender.com/docs` |
-| ReDoc | `https://genomic-api.onrender.com/redoc` |
+| Health | `https://genomic-api.koyeb.app/health` |
+| Swagger UI | `https://genomic-api.koyeb.app/docs` |
+| ReDoc | `https://genomic-api.koyeb.app/redoc` |
 
 ### Тест health
 
 ```bash
-curl https://genomic-api.onrender.com/health
+curl https://genomic-api.koyeb.app/health
 ```
 
 Ожидаемый ответ:
@@ -150,7 +122,7 @@ curl https://genomic-api.onrender.com/health
 ### Тест предсказания GEBV
 
 ```bash
-curl -X POST https://genomic-api.onrender.com/predict-gev \
+curl -X POST https://genomic-api.koyeb.app/predict-gev \
   -H "Content-Type: application/json" \
   -d '{
     "animal_id": "cow_001",
@@ -160,25 +132,45 @@ curl -X POST https://genomic-api.onrender.com/predict-gev \
 
 > dummy-модель ожидает 10 000 SNP. Если число другое — вернёт 400 ошибку.
 
+**Тест с 10 000 SNP (полный пример):**
+
+```bash
+python3 -c "
+import json, urllib.request
+dosages = [i % 3 for i in range(10000)]
+data = json.dumps({'animal_id': 'cow_123', 'snp_dosages': dosages}).encode()
+req = urllib.request.Request('https://genomic-api.koyeb.app/predict-gev', data=data, headers={'Content-Type': 'application/json'})
+resp = urllib.request.urlopen(req)
+print(json.dumps(json.loads(resp.read()), indent=2))
+"
+```
+
+Ожидаемый ответ:
+
+```json
+{
+  "animal_id": "cow_123",
+  "gebv": 1.3184,
+  "accuracy": 0.72,
+  "percentile": 90.56
+}
+```
+
 ---
 
 ## Управление
 
-### Логи
-
-В dashboard Render:
-1. Выберите сервис **genomic-api**
-2. Перейдите на вкладку **Logs**
-
 ### Передеплой
 
 При пуше в main-ветку:
-1. Render автоматически делает deploy
-2. Или вручную: **Manual Deploy** → **Deploy latest commit**
+1. Koyeb автоматически делает deploy
+2. Или вручную: **Redeploy**
 
 ### Остановка
 
-**Settings** → **Shutdown** — сервис останавливается, но не удаляется.
+В dashboard:
+1. Выберите сервис **genomic-api**
+2. **Settings** → **Deactivate** — сервис останавливается
 
 ---
 
@@ -187,12 +179,14 @@ curl -X POST https://genomic-api.onrender.com/predict-gev \
 | Ограничение | Значение |
 |---|---|
 | RAM | 512 МБ |
-| Idle time | 15 мин → sleep |
-| Cold start | 30-50 сек |
-| База данных | PostgreSQL (бесплатно 90 дней) |
-| Непрерывный uptime | Не гарантируется |
+| vCPU | 0.1 |
+| SSD | 2 ГБ |
+| Scale-to-zero | После 1 часа idle |
+| Cold start | 1-5 сек |
+| Количество сервисов | 1 |
+| Free PostgreSQL | 1 ГБ, 5 ч/мес |
 
-> Для продакшна рекомендуется платный план: Starter от $7/мес.
+> Для продакшна рекомендуется платный план: Starter от $10/мес.
 
 ---
 
@@ -201,9 +195,10 @@ curl -X POST https://genomic-api.onrender.com/predict-gev \
 ### Сервис не запускается
 
 1. Проверьте логи: **Logs** в dashboard
-2. typical errors:
+2. Типичные ошибки:
    - `port not found` — убедитесь `EXPOSE 8000` в Dockerfile
    - `model not found` — проверьте `app/assets/model.joblib` exists
+   - `python not found` — убедитесь `ENV PATH` настроен в Dockerfile
 
 ### 503 Service Unavailable
 
@@ -216,7 +211,30 @@ ls -la app/assets/model.joblib
 
 ### Cold start медленный
 
-Это норма для Free tier. Используйте UptimeRobot для keep-alive.
+Это редкость на Koyeb — обычно 1-5 сек. Если медленно:
+1. Проверьте регион (Frankfurt ближе к РФ)
+2. Размер образа — меньше = быстрее
+
+---
+
+## Сравнение с Render
+
+| Параметр | Koyeb | Render |
+|---|---|---|
+| RAM | 512 МБ | 512 МБ |
+| Sleep | После 1ч idle | После 15 мин idle |
+| Wake time | 1-5 сек | 30-50 сек |
+| SSD | 2 ГБ | ❌ Нет |
+| Free DB | PostgreSQL | PostgreSQL (90 дней) |
+
+### Когда выбрать Koyeb:
+- Нужен быстрый отклик
+- Не хотите UptimeRobot
+- SSD для модели
+
+### Когда выбрать Render:
+- Нужна бесплатная БД на 90 дней
+- Много часов (750/мес)
 
 ---
 
@@ -225,5 +243,4 @@ ls -la app/assets/model.joblib
 - [ ] Модель сгенерирована: `app/assets/model.joblib` exists
 - [ ] Health-чек проходит локально: `uv run uvicorn app.main:app --reload`
 - [ ] Код запушен в GitHub (main branch)
-- [ ] GitHub-репозиторий подключён к Render
-- [ ] UptimeRobot настроен (опционально)
+- [ ] GitHub-репозиторий подключён к Koyeb
