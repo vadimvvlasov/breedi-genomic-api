@@ -1,127 +1,229 @@
 # Деплой Genomic Prediction API
 
-## Сравнительная таблица бесплатных платформ
+## Render
 
-| Платформа | RAM | vCPU | Хранилище | Docker | Карта | Sleep |
-|---|---|---|---|---|---|---|
-| **Koyeb** | 512 МБ | 0.1 | 2 ГБ SSD | ✅ | Нет | Да |
-| **Google Cloud Run** | до 8 ГБ | до 4 | — | ✅ (OCI) | Да | Scale-to-zero |
-| **Oracle Cloud Always Free** | до 24 ГБ | до 4 OCPU | 200 ГБ | ✅ | Да | Нет |
-| **Render** | 512 МБ | shared | — | частично | Нет | Да |
-| **Railway** | до 8 ГБ | до 8 | — | ✅ | Да | Ограничено кредитом |
-
-> Для лёгкой модели (<50 МБ) оптимален **Koyeb**. Для тяжёлой модели — **Oracle Cloud** или **Google Cloud Run**.
-
----
-
-## Koyeb
-
-1. Зарегистрируйтесь на [koyeb.com](https://www.koyeb.com) (GitHub-аккаунт).
-2. Push-те код в GitHub-репозиторий.
-3. В Koyeb: **Create Service** → **GitHub** → выберите репозиторий.
-4. Укажите:
-   - **Builder**: Dockerfile
-   - **Branch**: `main`
-   - **Port**: `8000`
-   - **Region**: `Frankfurt` (ближе к РФ)
-5. Нажмите **Deploy**.
-
-После сборки сервис доступен по адресу `https://<app-name>.koyeb.app`.
-
-**Ограничение:** 512 МБ RAM — достаточно для модели с < 50 000 SNP.
-
----
-
-## Google Cloud Run
-
-### Шаг 1: билд и push образа
-
-```bash
-# Авторизуйтесь в gcloud
-gcloud auth login
-gcloud auth configure-docker
-
-# Соберите и запушьте
-docker build -t gcr.io/$PROJECT_ID/genomic-api:latest .
-docker push gcr.io/$PROJECT_ID/genomic-api:latest
-```
-
-### Шаг 2: создание сервиса
-
-```bash
-gcloud run deploy genomic-api \
-  --image gcr.io/$PROJECT_ID/genomic-api:latest \
-  --platform managed \
-  --region us-central1 \
-  --allow-unauthenticated \
-  --port 8000 \
-  --memory 512Mi \
-  --cpu 1 \
-  --set-env-vars UVICORN_WORKERS=2
-```
-
-### Бесплатные лимиты
-
-| Ресурс | Бесплатно в месяц |
+| Параметр | Значение |
 |---|---|
-| Запросы | 2 млн |
-| vCPU-время | 180 000 сек |
-| Память | 360 000 GiB-сек |
+| RAM | 512 МБ |
+| vCPU | shared |
+| Бесплатные часы | 750/мес (обнуляются 1-го числа) |
+| До засыпания | 15 мин idle |
+| Просыпание | 30-50 сек |
+| Карта | Не требуется |
+| Custom Domain | Бесплатно с SSL |
 
-> Нужен billing-аккаунт (привязка карты), но в пределах лимитов — $0.
-> Scale-to-zero: при отсутствии запросов контейнер не работает и не списывает ресурсы.
+> Платформа не требует кредитную карту. Достаточно GitHub-аккаунта.
 
 ---
 
-## Oracle Cloud Always Free
+## Шаг 1: Регистрация
 
-### Нюанс: ARM-архитектура
+1. Откройте [render.com](https://render.com)
+2. Нажмите **Start Free** → **Continue with GitHub**
+3. Авторизуйтесь через GitHub
+4. Подтвердите email
 
-Oracle Free Tier предоставляет Ampere A1 (ARM64). Для совместимости собирайте образ:
+---
+
+## Шаг 2: Подготовка модели
+
+Перед деплоем убедитесь, что модель существует:
 
 ```bash
-docker buildx build --platform linux/arm64 -t genomic-api:arm64 .
+# Локально: генерация dummy-модели (если её нет)
+uv run python scripts/generate_dummy_model.py
+
+# Проверка: должен появиться файл app/assets/model.joblib
+ls -la app/assets/
 ```
 
-Если вы на x86-машине, нужен `docker buildx` с поддержкой эмуляции (работает автоматически через QEMU, но билд займёт больше времени).
+Формат модели:
 
-### Шаг 1: push в OCIR
-
-```bash
-docker tag genomic-api:arm64 <region>.ocir.io/<namespace>/genomic-api:latest
-docker push <region>.ocir.io/<namespace>/genomic-api:latest
+```python
+{
+    "snp_effects": np.ndarray,     # shape (n_snps,) — аддитивные эффекты
+    "accuracy": float,               # точность предсказания
+    "ref_mean": float,              # среднее GEBV популяции
+    "ref_std": float,              # стандартное отклонение
+    "version": str,                # версия модели (опционально)
+}
 ```
 
-### Шаг 2: создание Compute Instance
+---
 
-1. В OCI Console: **Compute** → **Instances** → **Create instance**
-2. Выберите **Ampere A1** (ARM), профиль Always Free
-3. Image — Ubuntu/Oracle Linux
-4. При создании подключитесь по SSH и запустите контейнер:
+## Шаг 3: Деплой
+
+### Вариант A: Через web-интерфейс
+
+1. Войдите в [dashboard.render.com](https://dashboard.render.com)
+2. Нажмите **New** → **Web Service**
+3. Подключите GitHub-репозиторий:
+   - Выберите organization
+   - Выберите репозиторий `breedi-genomic-api`
+4. Настройте:
+   | Поле | Значение |
+   |---|---|
+   | Name | `genomic-api` |
+   | Root Directory | (по умолчанию) |
+   | Build Command | (пусто — использует Dockerfile) |
+   | Start Command | (пусто — из Dockerfile) |
+5. Нажмите **Advanced**:
+   | Поле | Значение |
+   |---|---|
+   | Port | `8000` |
+   | Instance Type | **Free** |
+6. Нажмите **Deploy**
+
+Первичный билд занимает 2-5 минут. После — сервис доступен по URL: `https://genomic-api.onrender.com`
+
+### Вариант B: Через CLI
 
 ```bash
-# Установка Docker на VM
-curl -fsSL https://get.docker.com | sh
-sudo usermod -aG docker $USER
+# Установка CLI
+brew install render-cli/render/render
 
-# Запуск
-docker pull <region>.ocir.io/<namespace>/genomic-api:latest
-docker run -d -p 8000:8000 --restart unless-stopped \
+# Авторизация
+render auth login
+
+# Деплой
+render web create \
   --name genomic-api \
-  <region>.ocir.io/<namespace>/genomic-api:latest
+  --sourcePath . \
+  --buildCommand "docker build -t genomic-api ." \
+  --startCommand "docker run -p 8000:8000 genomic-api"
 ```
 
-> **Always Free лимиты:** до 4 OCPU, 24 ГБ RAM, 200 ГБ хранилище. Этого хватит для модели с миллионами SNP.
+---
+
+## Шаг 4: Избежание засыпания (опционально)
+
+На Free tier сервис засыпает после 15 мин бездействия. Чтобы не заснул — используйте UptimeRobot для пинга.
+
+### Регистрация
+
+1. Откройте [uptimerobot.com](https://uptimerobot.com)
+2. Нажмите **Sign Up Free** → войдите через Google
+3. Нажмите **Add New Monitor**
+
+### Настройка монитора
+
+| Поле | Значение |
+|---|---|
+| Monitor Type | HTTP(s) |
+| Friendly Name | `genomic-api health` |
+| URL (or IP) | `https://genomic-api.onrender.com/health` |
+| Monitoring Interval | 5 minutes |
+| Alert Contacts | (ваш email) |
+
+Нажмите **Create Monitor**.
+
+Теперь UptimeRobot пингует `/health` каждые 5 минут — сервис не засыпает.
+
+> Бесплатный план: до 50 мониторов. Достаточно для одного сервиса.
+
+---
+
+## Проверка
+
+| Endpoint | URL |
+|---|---|
+| Health | `https://genomic-api.onrender.com/health` |
+| Swagger UI | `https://genomic-api.onrender.com/docs` |
+| ReDoc | `https://genomic-api.onrender.com/redoc` |
+
+### Тест health
+
+```bash
+curl https://genomic-api.onrender.com/health
+```
+
+Ожидаемый ответ:
+
+```json
+{
+  "status": "healthy",
+  "model_loaded": true,
+  "model_version": "dummy-v0.1.0"
+}
+```
+
+### Тест предсказания GEBV
+
+```bash
+curl -X POST https://genomic-api.onrender.com/predict-gev \
+  -H "Content-Type: application/json" \
+  -d '{
+    "animal_id": "cow_001",
+    "snp_dosages": [0,1,2,0,1,2,0,1,2,0,1]
+  }'
+```
+
+> dummy-модель ожидает 10 000 SNP. Если число другое — вернёт 400 ошибку.
+
+---
+
+## Управление
+
+### Логи
+
+В dashboard Render:
+1. Выберите сервис **genomic-api**
+2. Перейдите на вкладку **Logs**
+
+### Передеплой
+
+При пуше в main-ветку:
+1. Render автоматически делает deploy
+2. Или вручную: **Manual Deploy** → **Deploy latest commit**
+
+### Остановка
+
+**Settings** → **Shutdown** — сервис останавливается, но не удаляется.
+
+---
+
+## Ограничения Free tier
+
+| Ограничение | Значение |
+|---|---|
+| RAM | 512 МБ |
+| Idle time | 15 мин → sleep |
+| Cold start | 30-50 сек |
+| База данных | PostgreSQL (бесплатно 90 дней) |
+| Непрерывный uptime | Не гарантируется |
+
+> Для продакшна рекомендуется платный план: Starter от $7/мес.
+
+---
+
+## Устранение проблем
+
+### Сервис не запускается
+
+1. Проверьте логи: **Logs** в dashboard
+2. typical errors:
+   - `port not found` — убедитесь `EXPOSE 8000` в Dockerfile
+   - `model not found` — проверьте `app/assets/model.joblib` exists
+
+### 503 Service Unavailable
+
+Модель не загружена. Проверьте файл `app/assets/model.joblib`:
+
+```bash
+ls -la app/assets/model.joblib
+# Должен быть > 0 байт
+```
+
+### Cold start медленный
+
+Это норма для Free tier. Используйте UptimeRobot для keep-alive.
 
 ---
 
 ## Чеклист перед деплоем
 
-- [ ] Файл `model.joblib` лежит в `app/assets/`
-- [ ] Формат модели — dict с ключами: `snp_effects`, `accuracy`, `ref_mean`, `ref_std`
-- [ ] Число SNP в модели совпадает с ожидаемым входным размером (`len(snp_effects)`)
-- [ ] `pyproject.toml` и `uv.lock` актуальны (`uv sync && uv lock`)
-- [ ] `Dockerfile` корректно копирует `pyproject.toml` и `uv.lock`
-- [ ] Health-чек проходит: `GET /health` → `{"status": "healthy", "model_loaded": true}`
-- [ ] Для Oracle Cloud — образ собран под `linux/arm64`
-- [ ] Для Google Cloud Run — привязан billing-аккаунт
+- [ ] Модель сгенерирована: `app/assets/model.joblib` exists
+- [ ] Health-чек проходит локально: `uv run uvicorn app.main:app --reload`
+- [ ] Код запушен в GitHub (main branch)
+- [ ] GitHub-репозиторий подключён к Render
+- [ ] UptimeRobot настроен (опционально)

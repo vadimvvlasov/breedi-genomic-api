@@ -4,7 +4,9 @@
       "Bash(uv *)",
       "Bash(mkdir *)",
       "WebSearch",
-      "WebFetch(snapdeploy.dev)"
+      "WebFetch(snapdeploy.dev)",
+      "Bash(git remote *)",
+      "Bash(git push *)"
     ]
   },
   "$version": 3
