@@ -1,246 +1,65 @@
-# Деплой Genomic Prediction API
+# Деплой на Fly.io
 
-## Koyeb
+## Цены и лимиты
 
 | Параметр | Значение |
 |---|---|
-| RAM | 512 МБ |
-| vCPU | 0.1 |
-| SSD | 2 ГБ |
-| До засыпания | ❌ Не засыпает (scale-to-zero после 1ч) |
-| Просыпание | 1-5 сек |
-| Карта | ✅ Требуется для верификации |
-| Free DB | PostgreSQL (1 ГБ, 5 ч/мес compute) |
-| Custom Domain | Бесплатно |
+| Минимальный план | $5/мес (включает $5 кредита) |
+| VM shared-cpu-1x 256MB | $1.94/мес |
+| VM shared-cpu-1x 1GB | $5.70/мес |
 
-> **Требуется кредитная карта** для верификации. Списание — $0. Бесплатно в пределах Free tier.
+Для этого API хватит 256MB — весит ~50MB.
 
 ---
 
-## Шаг 1: Регистрация
-
-1. Откройте [koyeb.com](https://www.koyeb.com)
-2. Нажмите **Start Free** → **Continue with GitHub**
-3. Авторизуйтесь через GitHub
-4. Привяжите карту (требуется, но списывается $0)
-
----
-
-## Шаг 2: Подготовка модели
-
-Перед деплоем убедитесь, что модель существует:
+## Быстрый старт
 
 ```bash
-# Локально: генерация dummy-модели (если её нет)
-uv run python scripts/generate_dummy_model.py
+# 1. Установить CLI
+brew install flyctl  # macOS
+# или https://fly.io/docs/flyctl/install/
 
-# Проверка: должен появиться файл app/assets/model.joblib
-ls -la app/assets/
+# 2. Авторизоваться
+fly auth login
+
+# 3. Запустить
+fly launch --name genomic-api
 ```
 
-Формат модели:
+Ответь на вопросы:
+- Region: `Frankfurt`
+- Dockerfile detected: **Yes**
 
-```python
-{
-    "snp_effects": np.ndarray,     # shape (n_snps,) — аддитивные эффекты
-    "accuracy": float,               # точность предсказания
-    "ref_mean": float,              # среднее GEBV популяции
-    "ref_std": float,              # стандартное отклонение
-    "version": str,                # версия модели (опционально)
-}
-```
-
----
-
-## Шаг 3: Деплой
-
-### Вариант A: Через web-интерфейс (рекомендуется)
-
-1. Войдите в [dashboard.koyeb.com](https://dashboard.koyeb.com)
-2. Нажмите **Create Service**
-3. Подключите GitHub-репозиторий:
-   - Выберите organization
-   - Выберите репозиторий `breedi-genomic-api`
-4. Настройте:
-   | Поле | Значение |
-   |---|---|
-   | Name | `genomic-api` |
-   | Builder | Dockerfile |
-   | Branch | `main` |
-   | Port | `8000` |
-   | Region | `Frankfurt` (ближе к РФ) |
-5. Нажмите **Deploy**
-
-Первичный билд занимает 3-5 минут. После — сервис доступен по URL: `https://genomic-api.koyeb.app`
-
-### Вариант B: Через Koyeb CLI
+Деплой:
 
 ```bash
-# Установка CLI
-brew install koyeb/cli/koyeb  # macOS
-# или
-curl -L https://install.koyeb.dev | sh  # Linux
-
-# Авторизация
-koyeb login
-
-# Деплой
-koyeb service create \
-  --name genomic-api \
-  --github-owner your-username \
-  --github-repo breedi-genomic-api \
-  --builder dockerfile \
-  --port 8000
+fly deploy
 ```
 
 ---
 
 ## Проверка
 
-| Endpoint | URL |
-|---|---|
-| Health | `https://genomic-api.koyeb.app/health` |
-| Swagger UI | `https://genomic-api.koyeb.app/docs` |
-| ReDoc | `https://genomic-api.koyeb.app/redoc` |
-
-### Тест health
-
 ```bash
-curl https://genomic-api.koyeb.app/health
-```
-
-Ожидаемый ответ:
-
-```json
-{
-  "status": "healthy",
-  "model_loaded": true,
-  "model_version": "dummy-v0.1.0"
-}
-```
-
-### Тест предсказания GEBV
-
-```bash
-curl -X POST https://genomic-api.koyeb.app/predict-gev \
-  -H "Content-Type: application/json" \
-  -d '{
-    "animal_id": "cow_001",
-    "snp_dosages": [0,1,2,0,1,2,0,1,2,0,1]
-  }'
-```
-
-> dummy-модель ожидает 10 000 SNP. Если число другое — вернёт 400 ошибку.
-
-**Тест с 10 000 SNP (полный пример):**
-
-```bash
-python3 -c "
-import json, urllib.request
-dosages = [i % 3 for i in range(10000)]
-data = json.dumps({'animal_id': 'cow_123', 'snp_dosages': dosages}).encode()
-req = urllib.request.Request('https://genomic-api.koyeb.app/predict-gev', data=data, headers={'Content-Type': 'application/json'})
-resp = urllib.request.urlopen(req)
-print(json.dumps(json.loads(resp.read()), indent=2))
-"
-```
-
-Ожидаемый ответ:
-
-```json
-{
-  "animal_id": "cow_123",
-  "gebv": 1.3184,
-  "accuracy": 0.72,
-  "percentile": 90.56
-}
+curl https://genomic-api.fly.dev/health
+# {"status":"healthy","model_loaded":true,"model_version":"dummy-v0.1.0"}
 ```
 
 ---
 
-## Управление
+## Частые проблемы
 
-### Передеплой
-
-При пуше в main-ветку:
-1. Koyeb автоматически делает deploy
-2. Или вручную: **Redeploy**
-
-### Остановка
-
-В dashboard:
-1. Выберите сервис **genomic-api**
-2. **Settings** → **Deactivate** — сервис останавливается
-
----
-
-## Ограничения Free tier
-
-| Ограничение | Значение |
-|---|---|
-| RAM | 512 МБ |
-| vCPU | 0.1 |
-| SSD | 2 ГБ |
-| Scale-to-zero | После 1 часа idle |
-| Cold start | 1-5 сек |
-| Количество сервисов | 1 |
-| Free PostgreSQL | 1 ГБ, 5 ч/мес |
-
-> Для продакшна рекомендуется платный план: Starter от $10/мес.
-
----
-
-## Устранение проблем
-
-### Сервис не запускается
-
-1. Проверьте логи: **Logs** в dashboard
-2. Типичные ошибки:
-   - `port not found` — убедитесь `EXPOSE 8000` в Dockerfile
-   - `model not found` — проверьте `app/assets/model.joblib` exists
-   - `python not found` — убедитесь `ENV PATH` настроен в Dockerfile
-
-### 503 Service Unavailable
-
-Модель не загружена. Проверьте файл `app/assets/model.joblib`:
-
-```bash
-ls -la app/assets/model.joblib
-# Должен быть > 0 байт
-```
-
-### Cold start медленный
-
-Это редкость на Koyeb — обычно 1-5 сек. Если медленно:
-1. Проверьте регион (Frankfurt ближе к РФ)
-2. Размер образа — меньше = быстрее
-
----
-
-## Сравнение с Render
-
-| Параметр | Koyeb | Render |
+| Ошибка | Причина | Решение |
 |---|---|---|
-| RAM | 512 МБ | 512 МБ |
-| Sleep | После 1ч idle | После 15 мин idle |
-| Wake time | 1-5 сек | 30-50 сек |
-| SSD | 2 ГБ | ❌ Нет |
-| Free DB | PostgreSQL | PostgreSQL (90 дней) |
-
-### Когда выбрать Koyeb:
-- Нужен быстрый отклик
-- Не хотите UptimeRobot
-- SSD для модели
-
-### Когда выбрать Render:
-- Нужна бесплатная БД на 90 дней
-- Много часов (750/мес)
+| 503 | Нет модели | Проверить `app/assets/model.joblib` в репозитории |
+| 502 | port mismatch | Проверить `internal_port = 8000` в fly.toml |
 
 ---
 
-## Чеклист перед деплоем
+## Команды
 
-- [ ] Модель сгенерирована: `app/assets/model.joblib` exists
-- [ ] Health-чек проходит локально: `uv run uvicorn app.main:app --reload`
-- [ ] Код запушен в GitHub (main branch)
-- [ ] GitHub-репозиторий подключён к Koyeb
+```bash
+fly deploy          # Передеплой
+fly logs           # Логи
+fly scale memory 512  # Увеличить RAM до 512MB
+```
